@@ -1,0 +1,505 @@
+<!doctype html>
+
+<html lang="vi">
+
+<head>
+
+  <meta charset="utf-8">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <title>ESP32 Audio Alerts</title>
+
+  <style>
+
+    :root {
+      color-scheme: dark;
+      font-family: system-ui, sans-serif;
+    }
+
+    body {
+      margin: 0;
+      background: #101318;
+      color: #eef2f7;
+    }
+
+    header {
+      padding: 22px max(18px, calc((100% - 1000px) / 2));
+      background: #171c24;
+    }
+
+    h1 {
+      margin: 0 0 5px;
+      font-size: 25px;
+    }
+
+    .muted {
+      color: #9da8b6;
+    }
+
+    main {
+      max-width: 1000px;
+      margin: auto;
+      padding: 20px 18px;
+    }
+
+    .summary {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: 0;
+      border-radius: 8px;
+      padding: 9px 13px;
+      background: #2c7be5;
+      color: white;
+      cursor: pointer;
+      font-weight: 700;
+    }
+
+    button:hover {
+      opacity: 0.9;
+    }
+
+    .delete-btn {
+      background: #d9363e;
+    }
+
+    .delete-all-btn {
+      background: #b71c1c;
+    }
+
+    .card {
+      background: #1a2029;
+      border: 1px solid #303947;
+      border-left: 6px solid #36b37e;
+      border-radius: 10px;
+      padding: 15px;
+      margin: 12px 0;
+    }
+
+    .card.alert {
+      border-left-color: #ff3b3b;
+      box-shadow: 0 0 16px #ff3b3b30;
+    }
+
+    .title {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      font-weight: 700;
+      flex-wrap: wrap;
+    }
+
+    .danger {
+      color: #ff6464;
+    }
+
+    .scores {
+      color: #c3ccd8;
+      margin: 8px 0;
+      font-size: 14px;
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+
+    audio {
+      width: min(600px, 100%);
+      margin: 8px 0;
+    }
+
+    a {
+      color: #75b5ff;
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+  </style>
+
+</head>
+
+<body>
+
+<header>
+
+  <h1>ESP32 Audio Alerts</h1>
+
+  <div class="muted">
+    Lưu lâu dài trên máy chủ · phát lại · tải WAV · xóa dữ liệu
+  </div>
+
+</header>
+
+<main>
+
+  <div class="summary">
+
+    <b id="count">
+      0 sự kiện
+    </b>
+
+    <button onclick="loadEvents()">
+      Làm mới
+    </button>
+
+    <button
+      class="delete-all-btn"
+      onclick="deleteAllEvents()">
+      Xóa toàn bộ
+    </button>
+
+    <span
+      class="muted"
+      id="status">
+    </span>
+
+  </div>
+
+  <section id="events"></section>
+
+</main>
+
+
+<script>
+
+function pct(v) {
+
+  return (
+    Number(v) * 100
+  ).toFixed(1) + '%';
+
+}
+
+
+function esc(v) {
+
+  return String(v).replace(
+
+    /[&<>"]/g,
+
+    c => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;'
+    }[c])
+
+  );
+
+}
+
+
+function labelName(type) {
+
+  if (type === 'khoc') {
+    return 'KHÓC';
+  }
+
+  if (type === 'dap_pha') {
+    return 'ĐẬP PHÁ';
+  }
+
+  return String(type).toUpperCase();
+
+}
+
+
+/* ==========================================================
+   LOAD EVENTS
+   ========================================================== */
+
+async function loadEvents() {
+
+  const status =
+    document.getElementById(
+      'status'
+    );
+
+  status.textContent =
+    'Đang tải...';
+
+  try {
+
+    const response =
+      await fetch(
+        '/api/events',
+        {
+          cache: 'no-store'
+        }
+      );
+
+
+    const events =
+      await response.json();
+
+
+    document.getElementById(
+      'count'
+    ).textContent =
+      events.length +
+      ' sự kiện';
+
+
+    if (!events.length) {
+
+      document.getElementById(
+        'events'
+      ).innerHTML =
+        '<p class="muted">Chưa có cảnh báo.</p>';
+
+      status.textContent =
+        'Đã cập nhật';
+
+      return;
+    }
+
+
+    document.getElementById(
+      'events'
+    ).innerHTML =
+      events.map(
+        e => {
+
+          const eventId =
+            e.id || e.file;
+
+          return `
+
+          <article class="card alert">
+
+            <div class="title">
+
+              <span class="danger">
+
+                ⚠ ${esc(
+                  labelName(e.type)
+                )}
+
+              </span>
+
+              <span>
+
+                ${esc(e.time)}
+
+              </span>
+
+            </div>
+
+
+            <div class="scores">
+
+              Thiết bị:
+              ${esc(e.device)}
+
+              · Tin cậy:
+              ${pct(e.confidence)}
+
+              · Khóc:
+              ${pct(e.khoc)}
+
+              · Đập phá:
+              ${pct(e.dap_pha)}
+
+            </div>
+
+
+            <audio
+              controls
+              preload="none"
+              src="/recordings/${encodeURIComponent(e.file)}">
+            </audio>
+
+
+            <div class="actions">
+
+              <a
+                href="/recordings/${encodeURIComponent(e.file)}"
+                download>
+                Tải WAV
+              </a>
+
+
+              <button
+                class="delete-btn"
+                onclick="deleteEvent('${encodeURIComponent(eventId)}')">
+
+                Xóa
+
+              </button>
+
+            </div>
+
+          </article>
+
+          `;
+
+        }
+
+      ).join('');
+
+
+    status.textContent =
+      'Đã cập nhật';
+
+  }
+
+  catch (err) {
+
+    console.error(err);
+
+    status.textContent =
+      'Không kết nối được server';
+
+  }
+
+}
+
+
+/* ==========================================================
+   XÓA 1 SỰ KIỆN
+   ========================================================== */
+
+async function deleteEvent(eventId) {
+
+  const ok =
+    confirm(
+      'Bạn có chắc muốn xóa bản ghi và file WAV này?'
+    );
+
+
+  if (!ok) {
+    return;
+  }
+
+
+  try {
+
+    const response =
+      await fetch(
+
+        '/api/events/' +
+        eventId,
+
+        {
+          method: 'DELETE'
+        }
+
+      );
+
+
+    if (!response.ok) {
+
+      alert(
+        'Xóa thất bại.'
+      );
+
+      return;
+
+    }
+
+
+    await loadEvents();
+
+  }
+
+  catch (err) {
+
+    console.error(err);
+
+    alert(
+      'Không kết nối được server.'
+    );
+
+  }
+
+}
+
+
+/* ==========================================================
+   XÓA TOÀN BỘ
+   ========================================================== */
+
+async function deleteAllEvents() {
+
+  const ok =
+    confirm(
+      'Bạn có chắc muốn XÓA TOÀN BỘ lịch sử và tất cả file WAV?'
+    );
+
+
+  if (!ok) {
+    return;
+  }
+
+
+  try {
+
+    const response =
+      await fetch(
+
+        '/api/events',
+
+        {
+          method: 'DELETE'
+        }
+
+      );
+
+
+    if (!response.ok) {
+
+      alert(
+        'Xóa toàn bộ thất bại.'
+      );
+
+      return;
+
+    }
+
+
+    await loadEvents();
+
+  }
+
+  catch (err) {
+
+    console.error(err);
+
+    alert(
+      'Không kết nối được server.'
+    );
+
+  }
+
+}
+
+
+loadEvents();
+
+
+setInterval(
+
+  loadEvents,
+
+  5000
+
+);
+
+</script>
+
+</body>
+
+</html>
